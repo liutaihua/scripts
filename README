@@ -1,0 +1,8 @@
+analysis_tsdb.py:
+    for get data from msla.op.sdo.com, and process this data for making the availability that sdo.com. And send this data by email to administrator.
+
+smartcache.py:
+    for make a choice so smart, that from a memcached cluster. 
+
+sis_cache.py:
+    statistics some info from a memcached cluster.
