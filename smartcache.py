@@ -1,5 +1,5 @@
+#!/usr/bin/env python
 #-*- coding:utf8 -*-
-#!/usr/bin/env Python2.6 
 #author:liutaihua
 #email: defage@gmail.com
 
@@ -8,11 +8,11 @@
 Usage:
     [-h|--help] [-m memcachedSize] [-c memcachedNum] [-l machinelist]
 -s
-    memcached Size(this must be a Integer)
--c  memcached Num(this must be a Integer )
+    The size of demand( must be a Integer)
+-c  The number of instance( must be a Integer )
 
-Example:
-    python select_cache.py -s 1000 -c 2
+Example:(2 instance that each 4G)
+    python select_cache.py -s 8000 -c 2
 """
 
 
