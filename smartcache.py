@@ -182,12 +182,12 @@ def process(cache,memory, size, count):
                 print "===================== new instance nifo ====================="
                 print "starting memcached on " ,host, " ",dest_port
                 print "the cmd is: ", start_mc_cmd
-                #ssh_command(host, start_mc_cmd)
+                ssh_command(host, start_mc_cmd)
 
                 memcached_monitor_conf = ssh_command(host, "locate memcached_monitor.conf")[0].split('\n')[0]
                 print "memcached_monitor_conf path is(Make sure the path is correct):",memcached_monitor_conf
-                #ssh_command(host, "echo %s >> %s"%(start_mc_cmd, memcached_monitor_conf))
-                #ssh_command(host, "echo %s >> /etc/rc.local"%start_mc_cmd)
+                ssh_command(host, "echo %s >> %s"%(start_mc_cmd, memcached_monitor_conf))
+                ssh_command(host, "echo %s >> /etc/rc.local"%start_mc_cmd)
                 print "=========================== end ============================="
                 print "\n"
             else: continue
