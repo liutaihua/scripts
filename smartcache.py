@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python 
 #-*- coding:utf8 -*-
 #author:liutaihua
 #email: defage@gmail.com
@@ -12,7 +12,7 @@ Usage:
 -c  The number of instance( must be a Integer )
 
 Example:(2 instance that each 4G)
-    python select_cache.py -s 8000 -c 2
+    python smartcache.py -s 8000 -c 2
 """
 
 
@@ -24,6 +24,7 @@ import urllib
 import getopt
 import random
 import paramiko
+import socket
 import Queue, threading, sys  
 from threading import Thread
 
@@ -112,7 +113,11 @@ def ssh_command(host,cmd,myport=58422,user='root'):
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     privatekeyfile = os.path.expanduser('%s'%rsa_key)
     mykey = paramiko.RSAKey.from_private_key_file(privatekeyfile)
-    ssh.connect(host,port=myport,username=user,pkey=mykey)
+    try:
+        ssh.connect(host,port=myport,username=user,pkey=mykey)
+    except Exception, e:
+        print e, host
+        #break
     stdin, stdout, stderr = ssh.exec_command(cmd)
     result = stdout.readlines()
     return result
@@ -170,19 +175,32 @@ def process(cache,memory, size, count):
     for info in sorted(dest_result_dict.items(), key=lambda d:d[1],reverse=True):
         host = info[0]
         if times < count:
-            if int(info[1]) - single_cache_size > 3000:
+            if int(info[1]) - single_cache_size > 2000:
                 while True:
                     new_port = random.randint(11211, 11230)
-                    if new_port in port_dict[info[0]]:
-                        continue
-                    else:
+                    hp = host + ':' + str(new_port)
+                    if hp not in l:
                         dest_port = new_port
                         break
+                    else:continue
                 start_mc_cmd = '%s -d -u nobody -m %s -p %s -A -c 10240'%(memcached_binary, single_cache_size, dest_port)
                 print "===================== new instance nifo ====================="
                 print "starting memcached on " ,host, " ",dest_port
                 print "the cmd is: ", start_mc_cmd
                 ssh_command(host, start_mc_cmd)
+                print "-------- 启动确认信息--------"
+                print ssh_command(host, 'ps -ef|grep %s'%dest_port)
+                print ssh_command(host, 'date')
+                print "-----------------------------"
+                print "\n"
+                s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+                s.settimeout(3)
+                try:
+                    s.connect((host,int(dest_port)),)
+                    s.close()
+                except Exception, e:
+                    print "exec memcached on: %s, port: %s happen some error."%(host,dest_port)
+                    break
 
                 memcached_monitor_conf = ssh_command(host, "locate memcached_monitor.conf")[0].split('\n')[0]
                 print "memcached_monitor_conf path is(Make sure the path is correct):",memcached_monitor_conf
@@ -223,6 +241,8 @@ def main(argv):
     cacheList.remove("10.127.30.31")
     cacheList.remove("10.127.30.32")
     cacheList.remove("10.127.30.33")
+    cacheList.remove('10.127.57.57')
+    cacheList.remove('10.127.57.58')
     print cacheList
     wm = WorkerManager(17)
     for host in cacheList:
