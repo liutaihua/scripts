@@ -1,58 +1,47 @@
-#!/usr/bin/python
-# This file is part of tcollector.
-# Copyright (C) 2010  StumbleUpon, Inc.
+#!/usr/bin/env python
+# -*-mode: python; coding: iso-8859-1 -*-
 #
-# This program is free software: you can redistribute it and/or modify it
-# under the terms of the GNU Lesser General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or (at your
-# option) any later version.  This program is distributed in the hope that it
-# will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
-# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser
-# General Public License for more details.  You should have received a copy
-# of the GNU Lesser General Public License along with this program.  If not,
-# see <http://www.gnu.org/licenses/>.
-"""df disk space and inode counts for TSDB """
-#
-# dfstat.py
-#
-# df.1kblocks.total      total size of fs
-# df.1kblocks.used       blocks used
-# df.1kblocks.available  blocks available
-# df.inodes.total        number of inodes
-# df.inodes.used        number of inodes
-# df.inodes.free        number of inodes
+# Copyright (c) Liu taihua <defage@gmail.com>
 
-# All metrics are tagged with mount= and fstype=
-# This makes it easier to exclude stuff like
-# tmpfs mounts from disk usage reports.
+"""
+Usage:
+    [-h|--help] [-t interval=60] [-c cluster=Nanhui] [-H prefer=hostname|IP] [-v|--verbose True|False]
 
-# Because tsdb does not like slashes in tags, slashes will
-# be replaced by underscores in the mount= tag.  In theory
-# this could cause problems if you have a mountpoint of
-# "/foo/bar/" and "/foo_bar/".
-
+Example:
+    python ngx_SLA.py -t 60 -c Nanhui -H hostname --v True
+"""
 
 import os
 import socket
+import getopt
+import string
+import socket
 import subprocess
+import commands
 import sys
 import time
 import re
 import threading
+from collections import defaultdict
 
 
-COLLECTION_INTERVAL = 60  # seconds
-i = 0 
+normal_status_list = [200,302,301,304,404]
+re_dynamic_err_list = [500+i for i in range(9)]
+re_static_err_list = re_dynamic_err_list
+re_static_err_list.append(404)
+tsdb_server = 'msla.op.sdo.com'
+tsdb_port = 4242
+log_file = '/dev/shm/nginx_metrics/metrics.log'
+re_status = re.compile('(?<=\s)\d{3}(?=\s)')
+re_upstream = re.compile('(?<=\s)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:\d+(?=\s)')
+re_cost = re.compile('(?<=\s)\d+\.\d+|\-(?=\s)')
+re_static = re.compile('(?<=\s)\/[^?]*?\.(gif|png|jpg|jpeg|js|css|swf)')
+re_dynamic_err = re.compile('(?<=\s)5\d{2}(?=\s)')
+re_static_err = re.compile('(?<=\s)5\d{2}|404(?=\s)')
+#re_domain = re.compile()
 
 
-## {{{ http://code.activestate.com/recipes/439045/ (r2)
-#!/usr/bin/env python
-# -*-mode: python; coding: iso-8859-1 -*-
-#
-# Copyright (c) Peter Astrand <astrand@cendio.se>
 
-import os
-import string
 
 class BackwardsReader:
     """Read a file line by line, backwards"""
@@ -92,42 +81,145 @@ class BackwardsReader:
             self.trailing_newline = 1
             self.file.seek(-1, 2)
 
-# Example usage
-#def main():
-#    br = BackwardsReader(open('dfstat.py'))
-#    stop = 10
-#    while stop:
-#        line = br.readline()
-#        if not line:
-#            break
-#        print repr(line)
-#        stop -=1
+def getLocalIp():
+    from socket import socket, SOCK_DGRAM, AF_INET
+    s = socket(AF_INET, SOCK_DGRAM)
+    s.connect(('8.8.8.8',0))
+    LocalIp = s.getsockname()[0]
+    s.close()
+    return LocalIp
+
+def usage():
+    print __doc__
 
 
-
-def main():
-    throughput = 0
-    stop = int(time.time()) - COLLECTION_INTERVAL
-    br = BackwardsReader(open('/dev/shm/nginx_metrics/metrics.log'))
-    stream_list = []
+def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60, verbose=True):
     while True:
-        line = br.readline()
-        if int(float(line.split()[0])) >= stop:
-            domain = line.split()[1]
-            upstream = re.sub('\:\d{1,5}','',line.split()[4])
-            cost  = line.split()[-1]
-            stream_list.append(domain + ' ' + upstream + ' ' + cost)
+        rc_static = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+        rc_dynamic = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+        stop = int(time.time()) - COLLECTION_INTERVAL
+        br = BackwardsReader(open(log_file))
+
+        s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        #s.settimeout(5)
+        try:
+            s.connect((host,int(port)),)
+        except Exception,e:
+            print e
+    
+        while True:
+            line = br.readline()
+            if int(float(line.split()[0])) >= stop:
+                domain = line.split()[1]
+                #upstream = re.sub('\:\d{1,5}','',line.split()[4])
+                upstream = re_upstream.findall(line)
+                status = re_status.findall(line)[0]
+                cost  = line.split()[-1]
+
+                if re_static.findall(line):
+                    if upstream:
+                        upstream = re_upstream.findall(line)[0].split(":")[0]
+                    else:
+                        cost = 0.001
+                        upstream = getLocalIp()
+                    if cost == "-":
+                        continue
+                    else:
+                        cost = float(cost)
+                    rc_static[domain][upstream]['throughput'] += 1
+                    rc_static[domain][upstream]['latency'] += cost
+
+                    if int(status) in re_static_err_list:
+                        rc_static[domain][upstream][status] += 1
+                else:
+                    if upstream:
+                        upstream = re_upstream.findall(line)[0].split(":")[0]
+                    else:
+                        cost = 0.003
+                        upstream = getLocalIp()
+                    if cost == "-":
+                        continue
+                    else:
+                        cost = float(cost)
+                    rc_dynamic[domain][upstream]['throughput'] += 1
+                    rc_dynamic[domain][upstream]['latency'] += cost
+
+                    if int(status) in re_dynamic_err_list:
+                        rc_dynamic[domain][upstream][status] += 1
+            else:
+                break
+        for k, v in rc_static.items():
+            for k1, v1 in v.items():
+                for k2, v2 in v1.items():
+                    if k2 in ['throughput','latency']:
+                        result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=static"%(k2,int(time.time()),v2,k,k1,target,cluster)
+                        if verbose:
+                            print result
+                        s.send("%s\n"%result)
+                    else:
+                        result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=static"%(int(time.time()),v2,k,k1,k2,target,cluster)
+                        if verbose:
+                            print result
+                        s.send("%s\n"%result)
+        
+        for k, v in rc_dynamic.items():
+            for k1, v1 in v.items():
+                for k2, v2 in v1.items():
+                    if k2 in ['throughput','latency']:
+                        result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=dynamic"%(k2,int(time.time()),v2,k,k1,target,cluster)
+                        if verbose:
+                            print result
+                        s.send("%s\n"%result)
+                    else:
+                        result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=dynamic"%(int(time.time()),v2,k,k1,k2,target,cluster)
+                        if verbose:
+                            print result
+                        s.send("%s\n"%result)
+        s.close()
+        time.sleep(60)
+
+def main(argv):
+    if not argv:
+        usage()
+        sys.exit()
+    verbose = False
+    try:
+        opts, args = getopt.getopt(argv, "ht:c:H:v:", ["help", "interval=", "cluster=","target=","verbose=False"])
+    except getopt.GetoptError,err:
+        print err
+        usage()
+        sys.exit()
+
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            usage()
+            sys.exit()
+        elif opt in ("-t"):
+            interval = int(arg)
+        elif opt in ("-c"):
+            cluster = arg
+        elif opt in ("-H"):
+            target = arg
+        elif opt in ("-v|--verbose"):
+            verbose = arg
         else:
-            all_ips = map(lambda x:x.split()[1],stream_list)
-            #print all_ips
-            count_list = map(lambda x:{x:all_ips.count(x)}, all_ips)
-            d = {}
-            for i in count_list:
-                for k, v in i.items():
-                    d[k] = v
-            for k, v in d.items():
-                print "put nginx.throughput %s %s upstream=%s"%(time.time(), v, k)
-            break
+            usage()
+            sys.exit()
+
+    if verbose not in ["True","False"]:
+        usage()
+        sys.exit() 
+
+    if target == "hostname":
+        target = commands.getoutput("hostname")
+    else:
+        target = getLocalIp()
+
+    COLLECTION_INTERVAL = interval  # seconds
+    host = tsdb_server
+    port = tsdb_port
+    send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL, verbose)
+
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
