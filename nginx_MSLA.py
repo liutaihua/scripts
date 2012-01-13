@@ -38,6 +38,7 @@ re_cost = re.compile('(?<=\s)\d+\.\d+|\-(?=\s)')
 re_static = re.compile('(?<=\s)\/[^?]*?\.(gif|png|jpg|jpeg|js|css|swf)')
 re_dynamic_err = re.compile('(?<=\s)5\d{2}(?=\s)')
 re_static_err = re.compile('(?<=\s)5\d{2}|404(?=\s)')
+re_ipv4 = re.compile('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
 #re_domain = re.compile()
 
 
@@ -125,6 +126,12 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                 upstream = re_upstream.findall(line)
                 status = re_status.findall(line)[0]
                 cost  = line.split()[-1]
+
+                '''sometimes uri can be empty, like: 1302221251.460 aig.sdo.com - 400 - 10.129.1.230 -'''
+                if line.split()[2] == "-":continue
+
+                '''It's weird that the domain part is an IP address, so we don't process them now'''
+                if re_ipv4.findall(domain):continue
 
                 if re_static.findall(line):
                     if upstream:
