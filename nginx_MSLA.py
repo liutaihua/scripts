@@ -8,7 +8,7 @@ Usage:
     [-h|--help] [-t interval=60] [-c cluster=Nanhui] [-H prefer=hostname|IP] [-v|--verbose True|False]
 
 Example:
-    python ngx_SLA.py -t 60 -c Nanhui -H hostname --v True
+    python ngx_SLA.py -t 60 -c Nanhui -H hostname -v True
 """
 
 import os
@@ -26,9 +26,9 @@ from collections import defaultdict
 
 
 normal_status_list = [200,302,301,304,404]
-re_dynamic_err_list = [500+i for i in range(9)]
-re_static_err_list = re_dynamic_err_list
-re_static_err_list.append(404)
+dynamic_err_list = [500+i for i in range(9)]
+static_err_list = [500+i for i in range(9)]
+static_err_list.append(404)
 tsdb_server = 'msla.op.sdo.com'
 tsdb_port = 4242
 log_file = '/dev/shm/nginx_metrics/metrics.log'
@@ -45,6 +45,19 @@ re_static_err = re.compile('(?<=\s)5\d{2}|404(?=\s)')
 
 class BackwardsReader:
     """Read a file line by line, backwards"""
+    def __init__(self, file):
+        self.file = file
+        self.buf = ""
+        try:
+            self.file.seek(-1, 2)
+        except Exception,e:
+            print e
+        self.trailing_newline = 0
+        lastchar = self.file.read(1)
+        if lastchar == "\n":
+            self.trailing_newline = 1
+            self.file.seek(-1, 2)
+
     BLKSIZE = 4096
 
     def readline(self):
@@ -71,16 +84,6 @@ class BackwardsReader:
                     if pos - toread == 0:
                         self.buf = "\n" + self.buf
 
-    def __init__(self, file):
-        self.file = file
-        self.buf = ""
-        self.file.seek(-1, 2)
-        self.trailing_newline = 0
-        lastchar = self.file.read(1)
-        if lastchar == "\n":
-            self.trailing_newline = 1
-            self.file.seek(-1, 2)
-
 def getLocalIp():
     from socket import socket, SOCK_DGRAM, AF_INET
     s = socket(AF_INET, SOCK_DGRAM)
@@ -92,6 +95,17 @@ def getLocalIp():
 def usage():
     print __doc__
 
+def conn_socket4sendmsg(msg, host, port):
+    sk = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    try:
+        sk.connect((host, port),)
+    except Exception,e:
+        print e
+        return False
+    sk.send("%s\n"%msg)
+    sk.close()
+    return True
+    
 
 def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60, verbose=True):
     while True:
@@ -100,15 +114,11 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
         stop = int(time.time()) - COLLECTION_INTERVAL
         br = BackwardsReader(open(log_file))
 
-        s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        #s.settimeout(5)
-        try:
-            s.connect((host,int(port)),)
-        except Exception,e:
-            print e
-    
         while True:
             line = br.readline()
+            if not line:
+                print "not line:",repr(line)
+                break
             if int(float(line.split()[0])) >= stop:
                 domain = line.split()[1]
                 #upstream = re.sub('\:\d{1,5}','',line.split()[4])
@@ -129,7 +139,7 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                     rc_static[domain][upstream]['throughput'] += 1
                     rc_static[domain][upstream]['latency'] += cost
 
-                    if int(status) in re_static_err_list:
+                    if int(status) in static_err_list:
                         rc_static[domain][upstream][status] += 1
                 else:
                     if upstream:
@@ -144,10 +154,9 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                     rc_dynamic[domain][upstream]['throughput'] += 1
                     rc_dynamic[domain][upstream]['latency'] += cost
 
-                    if int(status) in re_dynamic_err_list:
+                    if int(status) in dynamic_err_list:
                         rc_dynamic[domain][upstream][status] += 1
-            else:
-                break
+            else:break
         for k, v in rc_static.items():
             for k1, v1 in v.items():
                 for k2, v2 in v1.items():
@@ -155,12 +164,16 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=static"%(k2,int(time.time()),v2,k,k1,target,cluster)
                         if verbose:
                             print result
-                        s.send("%s\n"%result)
+                        if not conn_socket4sendmsg(result, host, port):
+                            print "reconnect to tsdb"
+                            conn_socket4sendmsg(result, host, port)    
                     else:
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=static"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
-                        s.send("%s\n"%result)
+                        if not conn_socket4sendmsg(result, host, port):
+                            print "reconnect to tsdb"
+                            conn_socket4sendmsg(result, host, port)    
         
         for k, v in rc_dynamic.items():
             for k1, v1 in v.items():
@@ -169,13 +182,16 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=dynamic"%(k2,int(time.time()),v2,k,k1,target,cluster)
                         if verbose:
                             print result
-                        s.send("%s\n"%result)
+                        if not conn_socket4sendmsg(result, host, port):
+                            print "reconnect to tsdb"
+                            conn_socket4sendmsg(result, host, port)    
                     else:
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=dynamic"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
-                        s.send("%s\n"%result)
-        s.close()
+                        if not conn_socket4sendmsg(result, host, port):
+                            print "reconnect to tsdb"
+                            conn_socket4sendmsg(result, host, port)    
         time.sleep(60)
 
 def main(argv):
