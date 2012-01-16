@@ -1,0 +1,5 @@
+# Broadcom Corporation NetXtreme II BCM5709 Gigabit Ethernet
+DEVICE=eth1.600
+ONBOOT=yes
+Bridge=vlan600
+VLAN=yes

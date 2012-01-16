@@ -1,0 +1,3 @@
+DEVICE=vlan600
+ONBOOT=yes
+TYPE=Bridge

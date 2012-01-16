@@ -1,0 +1,5 @@
+# Broadcom Corporation NetXtreme II BCM5708 Gigabit Ethernet
+DEVICE=eth1
+HWADDR=00:21:5E:6F:C4:42
+ONBOOT=yes
+VLAN=yes
