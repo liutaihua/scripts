@@ -124,7 +124,10 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                 domain = line.split()[1]
                 #upstream = re.sub('\:\d{1,5}','',line.split()[4])
                 upstream = re_upstream.findall(line)
-                status = re_status.findall(line)[0]
+                status = re_status.findall(line)
+                if status:
+                    status = status[0]
+                else:continue
                 cost  = line.split()[-1]
 
                 '''sometimes uri can be empty, like: 1302221251.460 aig.sdo.com - 400 - 10.129.1.230 -'''
@@ -171,6 +174,7 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=static"%(k2,int(time.time()),v2,k,k1,target,cluster)
                         if verbose:
                             print result
+                        #soket.send("%s\n"%result)
                         if not conn_socket4sendmsg(result, host, port):
                             print "reconnect to tsdb"
                             conn_socket4sendmsg(result, host, port)    
@@ -178,6 +182,7 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=static"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
+                        #soket.send("%s\n"%result)
                         if not conn_socket4sendmsg(result, host, port):
                             print "reconnect to tsdb"
                             conn_socket4sendmsg(result, host, port)    
@@ -189,6 +194,7 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=dynamic"%(k2,int(time.time()),v2,k,k1,target,cluster)
                         if verbose:
                             print result
+                        #soket.send("%s\n"%result)
                         if not conn_socket4sendmsg(result, host, port):
                             print "reconnect to tsdb"
                             conn_socket4sendmsg(result, host, port)    
@@ -196,6 +202,7 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=dynamic"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
+                        #soket.send("%s\n"%result)
                         if not conn_socket4sendmsg(result, host, port):
                             print "reconnect to tsdb"
                             conn_socket4sendmsg(result, host, port)    
