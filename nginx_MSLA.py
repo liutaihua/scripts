@@ -112,6 +112,11 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
         rc_dynamic = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
         stop = int(time.time()) - COLLECTION_INTERVAL
         br = BackwardsReader(open(log_file))
+        sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        try:
+            sock.connect((host,port),)
+        except Exception, e:
+            print e
 
         while True:
             line = br.readline()
@@ -172,15 +177,20 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=static"%(k2,int(time.time()),v2,k,k1,target,cluster)
                         if verbose:
                             print result
-                        #soket.send("%s\n"%result)
-                        if not conn_socket4sendmsg(result, host, port):
-                            print "reconnect to tsdb"
+                        try:
+                            sock.send("%s\n"%result)
+                        except Exception, e:
                             conn_socket4sendmsg(result, host, port)    
+                            print e
                     else:
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=static"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
-                        conn_socket4sendmsg(result, host, port)    
+                        try:
+                            sock.send("%s\n"%result)
+                        except Exception, e:
+                            conn_socket4sendmsg(result, host, port)    
+                            print e
         
         for k, v in rc_dynamic.items():
             for k1, v1 in v.items():
@@ -189,12 +199,20 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=dynamic"%(k2,int(time.time()),v2,k,k1,target,cluster)
                         if verbose:
                             print result
-                        conn_socket4sendmsg(result, host, port)    
+                        try:
+                            sock.send("%s\n"%result)
+                        except Exception, e:
+                            conn_socket4sendmsg(result, host, port)    
+                            print e
                     else:
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=dynamic"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
-                        conn_socket4sendmsg(result, host, port)    
+                        try:
+                            sock.send("%s\n"%result)
+                        except Exception, e:
+                            conn_socket4sendmsg(result, host, port)    
+                            print e
         time.sleep(60)
 
 def main(argv):
