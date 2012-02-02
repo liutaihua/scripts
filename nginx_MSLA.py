@@ -102,10 +102,8 @@ def conn_socket4sendmsg(msg, host, port):
         sk.connect((host, port),)
     except Exception,e:
         print e
-        return False
     sk.send("%s\n"%msg)
     sk.close()
-    return True
     
 
 def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60, verbose=True):
@@ -182,10 +180,7 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=static"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
-                        #soket.send("%s\n"%result)
-                        if not conn_socket4sendmsg(result, host, port):
-                            print "reconnect to tsdb"
-                            conn_socket4sendmsg(result, host, port)    
+                        conn_socket4sendmsg(result, host, port)    
         
         for k, v in rc_dynamic.items():
             for k1, v1 in v.items():
@@ -194,18 +189,12 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         result = "put nginx.%s %s %s domain=%s upstream=%s host=%s virtualized=no cluster=%s type=dynamic"%(k2,int(time.time()),v2,k,k1,target,cluster)
                         if verbose:
                             print result
-                        #soket.send("%s\n"%result)
-                        if not conn_socket4sendmsg(result, host, port):
-                            print "reconnect to tsdb"
-                            conn_socket4sendmsg(result, host, port)    
+                        conn_socket4sendmsg(result, host, port)    
                     else:
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=dynamic"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
                             print result
-                        #soket.send("%s\n"%result)
-                        if not conn_socket4sendmsg(result, host, port):
-                            print "reconnect to tsdb"
-                            conn_socket4sendmsg(result, host, port)    
+                        conn_socket4sendmsg(result, host, port)    
         time.sleep(60)
 
 def main(argv):
