@@ -97,13 +97,14 @@ def usage():
     print __doc__
 
 def conn_socket4sendmsg(msg, host, port):
-    sk = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     try:
-        sk.connect((host, port),)
+        sock.connect((host, port),)
     except Exception,e:
         print e
-    sk.send("%s\n"%msg)
-    sk.close()
+    else:
+        sock.send("%s\n"%msg)
+        sock.close()
     
 
 def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60, verbose=True):

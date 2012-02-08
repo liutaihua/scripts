@@ -9,3 +9,6 @@ sis_cache.py:
 
 nginx_MSLA.py:
     a SLA data collector from nginx log, send data to opentsdb server
+
+hashdos.py
+    a script that imitate hash bug to attack it.
