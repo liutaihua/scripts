@@ -22,6 +22,8 @@ import sys
 import time
 import re
 import threading
+from threading import Thread
+from Queue import Queue
 from collections import defaultdict
 
 
@@ -85,6 +87,18 @@ class BackwardsReader:
                     if pos - toread == 0:
                         self.buf = "\n" + self.buf
 
+class Wait4sendQueue(Queue):
+    """A Queue for the reader thread"""
+
+    def nput(self, value):
+        """A nonblocking put, that simply logs and discards the value when the
+           queue is full, and returns false if we dropped."""
+        try:
+            self.put(value, False)
+        except Full:
+            return False
+        return True
+
 def getLocalIp():
     from socket import socket, SOCK_DGRAM, AF_INET
     s = socket(AF_INET, SOCK_DGRAM)
@@ -96,81 +110,113 @@ def getLocalIp():
 def usage():
     print __doc__
 
-def conn_socket4sendmsg(msg, host, port):
+def reconn_socket4sendmsg(msg, host, port):
     sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     try:
         sock.connect((host, port),)
     except Exception,e:
         print e
+        return False
     else:
         sock.send("%s\n"%msg)
         sock.close()
+        return True
     
+def clean_tmpfs():
+    used_per = commands.getoutput('df -lBM /dev/shm | grep "/dev/shm"').split()[-2].rstrip("%")
+    print "tmpfs used per:",used_per
+    if int(used_per) >= 85:
+        for file in os.listdir('/dev/shm/nginx_metrics/'):
+            os.system("> /dev/shm/nginx_metrics/%s"%file)
+            print "tmpfs used:",used_per,"flush it"
+
+def getSLA_data(COLLECTION_INTERVAL=60):
+    rc_static = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    rc_dynamic = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    stop = int(time.time()) - COLLECTION_INTERVAL
+    br = BackwardsReader(open(log_file))
+    while True:
+        line = br.readline()
+        if not line:
+            print "not line:",repr(line)
+            break
+        if int(float(line.split()[0])) >= stop:
+            domain = line.split()[1]
+            #upstream = re.sub('\:\d{1,5}','',line.split()[4])
+            upstream = re_upstream.findall(line)
+            status = re_status.findall(line)
+            if status:
+                status = status[0]
+            else:continue
+            cost  = line.split()[-1]
+
+            '''sometimes uri can be empty, like: 1302221251.460 aig.sdo.com - 400 - 10.129.1.230 -'''
+            if line.split()[2] == "-":continue
+
+            '''It's weird that the domain part is an IP address, so we don't process them now'''
+            if re_ipv4.findall(domain):continue
+
+            if re_static.findall(line):
+                if upstream:
+                    upstream = upstream[0].split(":")[0]
+                else:
+                    cost = 0.001
+                    upstream = getLocalIp()
+                if cost == "-":
+                    continue
+                else:
+                    cost = float(cost)
+                rc_static[domain][upstream]['throughput'] += 1
+                rc_static[domain][upstream]['latency'] += cost
+
+                if int(status) in static_err_list:
+                    rc_static[domain][upstream][status] += 1
+            else:
+                if upstream:
+                    upstream = re_upstream.findall(line)[0].split(":")[0]
+                else:
+                    cost = 0.003
+                    upstream = getLocalIp()
+                if cost == "-":
+                    continue
+                else:
+                    cost = float(cost)
+                rc_dynamic[domain][upstream]['throughput'] += 1
+                rc_dynamic[domain][upstream]['latency'] += cost
+
+                if int(status) in dynamic_err_list:
+                    rc_dynamic[domain][upstream][status] += 1
+        else:break
+    return rc_dynamic, rc_static
+
+class Sender_Thread(Thread):
+    def __init__(self, queue, sock):
+        Thread.__init__(self)
+        self.queue = queue
+        self.sock = sock
+
+    def run(self):
+        while not self.queue.empty():
+            msg = self.queue.get()
+            print "send queue msg, type:%s,info:"%type(msg),msg
+            self.sock.send("%s\n"%msg)
+        return
+
 
 def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60, verbose=True):
+    queue = Wait4sendQueue()
     while True:
-        rc_static = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-        rc_dynamic = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-        stop = int(time.time()) - COLLECTION_INTERVAL
-        br = BackwardsReader(open(log_file))
         sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         try:
             sock.connect((host,port),)
         except Exception, e:
             print e
+        else:
+            if not queue.empty():
+                send_queue = Sender_Thread(queue, sock)
+                send_queue.start()
 
-        while True:
-            line = br.readline()
-            if not line:
-                print "not line:",repr(line)
-                break
-            if int(float(line.split()[0])) >= stop:
-                domain = line.split()[1]
-                #upstream = re.sub('\:\d{1,5}','',line.split()[4])
-                upstream = re_upstream.findall(line)
-                status = re_status.findall(line)
-                if status:
-                    status = status[0]
-                else:continue
-                cost  = line.split()[-1]
-
-                '''sometimes uri can be empty, like: 1302221251.460 aig.sdo.com - 400 - 10.129.1.230 -'''
-                if line.split()[2] == "-":continue
-
-                '''It's weird that the domain part is an IP address, so we don't process them now'''
-                if re_ipv4.findall(domain):continue
-
-                if re_static.findall(line):
-                    if upstream:
-                        upstream = re_upstream.findall(line)[0].split(":")[0]
-                    else:
-                        cost = 0.001
-                        upstream = getLocalIp()
-                    if cost == "-":
-                        continue
-                    else:
-                        cost = float(cost)
-                    rc_static[domain][upstream]['throughput'] += 1
-                    rc_static[domain][upstream]['latency'] += cost
-
-                    if int(status) in static_err_list:
-                        rc_static[domain][upstream][status] += 1
-                else:
-                    if upstream:
-                        upstream = re_upstream.findall(line)[0].split(":")[0]
-                    else:
-                        cost = 0.003
-                        upstream = getLocalIp()
-                    if cost == "-":
-                        continue
-                    else:
-                        cost = float(cost)
-                    rc_dynamic[domain][upstream]['throughput'] += 1
-                    rc_dynamic[domain][upstream]['latency'] += cost
-
-                    if int(status) in dynamic_err_list:
-                        rc_dynamic[domain][upstream][status] += 1
-            else:break
+        rc_dynamic, rc_static = getSLA_data()
         for k, v in rc_static.items():
             for k1, v1 in v.items():
                 for k2, v2 in v1.items():
@@ -181,8 +227,9 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         try:
                             sock.send("%s\n"%result)
                         except Exception, e:
-                            conn_socket4sendmsg(result, host, port)    
                             print e
+                            if not reconn_socket4sendmsg(result, host, port):
+                                queue.nput(result)
                     else:
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=static"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
@@ -190,8 +237,9 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         try:
                             sock.send("%s\n"%result)
                         except Exception, e:
-                            conn_socket4sendmsg(result, host, port)    
                             print e
+                            if not reconn_socket4sendmsg(result, host, port):
+                                queue.nput(result)
         
         for k, v in rc_dynamic.items():
             for k1, v1 in v.items():
@@ -203,8 +251,9 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         try:
                             sock.send("%s\n"%result)
                         except Exception, e:
-                            conn_socket4sendmsg(result, host, port)    
                             print e
+                            if not reconn_socket4sendmsg(result, host, port):
+                                queue.nput(result)
                     else:
                         result = "put nginx.error %s %s domain=%s upstream=%s code=%s host=%s virtualized=no cluster=%s type=dynamic"%(int(time.time()),v2,k,k1,k2,target,cluster)
                         if verbose:
@@ -212,8 +261,11 @@ def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60,
                         try:
                             sock.send("%s\n"%result)
                         except Exception, e:
-                            conn_socket4sendmsg(result, host, port)    
                             print e
+                            if not reconn_socket4sendmsg(result, host, port):
+                                queue.nput(result)
+        clean_tmpfs()
+        sock.close()
         time.sleep(60)
 
 def main(argv):
