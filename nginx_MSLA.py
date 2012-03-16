@@ -204,7 +204,7 @@ class Sender_Thread(Thread):
 
 
 def send_msg2tsdb(host, port, log_file, target, cluster, COLLECTION_INTERVAL=60, verbose=True):
-    queue = Wait4sendQueue()
+    queue = Wait4sendQueue(maxsize=60000)
     while True:
         sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         try:
