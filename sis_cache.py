@@ -26,7 +26,6 @@ import random
 import paramiko
 
 
-#cacheList = ['10.127.26.119','10.127.26.120','10.127.26.121','10.127.26.122']
 rsa_key = '~/.ssh/id_rsa'
 mc_conf_path = '/opt/scripts/memcached_monitor.conf'
 memcached_binary = 'memcached'

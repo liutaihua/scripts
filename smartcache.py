@@ -237,12 +237,7 @@ def main(argv):
             sys.exit()
 
     cacheList = [str(i) for i in json.loads(urllib.urlopen(server_index_api).read())]
-    cacheList.remove("10.127.26.110")
-    cacheList.remove("10.127.30.31")
-    cacheList.remove("10.127.30.32")
-    cacheList.remove("10.127.30.33")
-    cacheList.remove('10.127.57.57')
-    cacheList.remove('10.127.57.58')
+    cacheList.remove("10.xx.x.x.x")
     print cacheList
     wm = WorkerManager(17)
     for host in cacheList:
