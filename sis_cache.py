@@ -67,7 +67,7 @@ def get_mem_info(cachelist,myport=58422,user='root'):
         try:
             ssh.connect(host,port=myport,username=user,pkey=mykey)
         except paramiko.AuthenticationException:
-            ssh.connect(host,port=myport,username=user,password='WD#sd7258')
+            ssh.connect(host,port=myport,username=user,password='XXXX YOUR PASS')
         stdin, stdout, stderr = ssh.exec_command('free -m')
 #        a = stdout.readlines()
 #        b = a[1]
@@ -96,7 +96,7 @@ def get_cache_info(cachelist,myport=58422,user='root'):
         try:
             ssh.connect(host,port=myport,username=user,pkey=mykey)
         except paramiko.AuthenticationException:
-            ssh.connect(host,port=myport,username=user,password='WD#sd7258')
+            ssh.connect(host,port=myport,username=user,password='XXX YOUR PASS')
         stdin, stdout, stderr = ssh.exec_command(cmd)
 #        a = stdout.readlines()
 #        b = a[0]
@@ -170,7 +170,7 @@ def get_mc_port(cachelist,myport=58422,user='root'):
         try:
             ssh.connect(host,port=myport,username=user,pkey=mykey)
         except paramiko.AuthenticationException:
-            ssh.connect(host,port=myport,username=user,password='WD#sd7258')
+            ssh.connect(host,port=myport,username=user,password='XXXX YOUR PASS')
         stdin, stdout, stderr = ssh.exec_command(cmd)
         a = stdout.readlines()
         for i in a:
