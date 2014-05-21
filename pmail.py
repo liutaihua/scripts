@@ -54,9 +54,9 @@ def main(argv):
         usage()
         sys.exit()
 
-    mail_host="mail.snda.com"
-    username="ptwarn@snda.com"
-    passwd="8ikju76yh"
+    mail_host=""
+    username=""
+    passwd=""
     global subject, content, noattach, read_list, read
 
     attachment_list = []
